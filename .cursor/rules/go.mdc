@@ -1,0 +1,68 @@
+---
+description: 
+globs: *.go
+alwaysApply: false
+---
+# Go Development Rules for Cursor
+
+## Project Structure
+- Use `cmd/${program}/main.go` for main applications
+- Use `pkg/**/*.go` for shared libraries and packages
+- Keep packages focused and cohesive
+
+## Build and Run Commands
+- NO Make - use simple Go commands only
+- Build: `go build ./cmd/har-mcp`
+- Run: `go run ./cmd/har-mcp`
+- Test: `go test ./...`
+- Format: `go fmt ./...`
+- Vet: `go vet ./...`
+- Tidy dependencies: `go mod tidy`
+
+## Code Style
+- Follow standard Go formatting with `gofmt`
+- Use standard Go naming conventions (PascalCase for exported, camelCase for unexported)
+- Keep functions and methods small and focused
+- Use meaningful variable and function names
+- Avoid unnecessary else clauses when using early returns
+
+## Coding
+- You should have access to a godoc tool. Use it as much as possible
+- Don't guess interfaces. Use the tools that you have to doublecheck what you are doing is correct
+
+## Testing
+- Use github.com/stretchr/testify for assertions
+- NO table-driven tests - use test helpers instead
+- Test file naming: `*_test.go`
+- Test function naming: `TestFunctionName`
+- Use `require` for test setup that must succeed, `assert` for actual test assertions
+- Create helper functions to reduce test duplication
+- Test one thing per test function
+
+## Error Handling
+- Always handle errors explicitly
+- Use meaningful error messages
+- Wrap errors with context using `fmt.Errorf("context: %w", err)`
+- Return errors as the last return value
+
+## Dependencies
+- Minimize external dependencies
+- Use standard library when possible
+- Pin dependency versions in go.mod
+
+## Comments
+- Use godoc style comments for exported functions and types
+- Comment explains WHY, not WHAT
+- Keep comments concise and up-to-date
+
+## Performance
+- Avoid premature optimization
+- Profile before optimizing
+- Use appropriate data structures
+- Be mindful of memory allocations in hot paths
+
+## Concurrency
+- Use channels for communication between goroutines
+- Avoid shared mutable state
+- Use context.Context for cancellation and timeouts
+- Prefer composition over inheritance 
