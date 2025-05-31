@@ -1,6 +1,6 @@
 # HAR MCP Server
 
-A Model Context Protocol (MCP) server for parsing and analyzing HAR (HTTP Archive) files. This server allows AI assistants to inspect network traffic captured in HAR format, with built-in support for redacting sensitive authentication headers.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server for parsing and analyzing HAR (HTTP Archive) files. This server allows AI assistants to inspect network traffic captured in HAR format, with built-in support for redacting sensitive authentication headers.
 
 ## Features
 
@@ -8,19 +8,74 @@ A Model Context Protocol (MCP) server for parsing and analyzing HAR (HTTP Archiv
 - **List all URLs and HTTP methods** accessed in the HAR file
 - **Query request IDs** for specific URL and method combinations
 - **Retrieve full request details** with automatic redaction of authentication headers
+- **Flexible HAR parsing** that handles real-world HAR files with:
+  - Float/decimal values for time fields (automatically rounded to integers)
+  - Plain text or base64-encoded response content
+  - Additional fields not present in the basic HAR spec
 - Support for standard HAR format as produced by browser developer tools
 
 ## Installation
 
-```bash
-go get github.com/tjamet/har-mcp
+You can install this MCP server using your standard [MCP](https://modelcontextprotocol.io/introduction) configuration.
+
+Add the following JSON block to your mcp configuration.
+
+## Using docker
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "har": {
+        "command": "docker",
+        "args": [
+          "run",
+          "-i",
+          "--rm",
+          "ghcr.io/tjamet/har-mcp"
+        ]
+      }
+    }
+  }
+}
 ```
 
-## Building
+## Using go run
 
-```bash
-go build ./cmd/har-mcp
+Alternatively you can run thr server directly with `go run`.
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "go",
+      "args": [
+        "run",
+        "github.com/tjamet/har-mcp/cmd/har-mcp@main"
+      ]
+    }
+  }
+}
 ```
+
+### Build from source
+
+If you don't have Docker, you can use `go build` to build the binary in the
+`cmd/har-mcp` directory, and use the `github-mcp-server` command.
+To specify the output location of the build, use the `-o` flag. You should configure your server to use the built executable as its `command`. For example:
+
+```JSON
+{
+  "mcp": {
+    "servers": {
+      "github": {
+        "command": "/path/to/har-mcp-server"
+      }
+    }
+  }
+}
+```
+
 
 ## Usage
 

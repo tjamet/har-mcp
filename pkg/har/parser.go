@@ -2,6 +2,7 @@
 package har
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +29,7 @@ func (p *Parser) ParseFromFile(path string) (*har.HAR, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open HAR file: %w", err)
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	return p.Parse(file)
 }
@@ -39,7 +40,7 @@ func (p *Parser) ParseFromURL(harURL string) (*har.HAR, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch HAR from URL: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch HAR: HTTP %d", resp.StatusCode)
@@ -50,14 +51,29 @@ func (p *Parser) ParseFromURL(harURL string) (*har.HAR, error) {
 
 // Parse parses a HAR file from the given reader
 func (p *Parser) Parse(r io.Reader) (*har.HAR, error) {
-	var harData har.HAR
-	decoder := json.NewDecoder(r)
+	// Read all data so we can try multiple parsing approaches
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read HAR data: %w", err)
+	}
 
-	if err := decoder.Decode(&harData); err != nil {
+	// First try standard parsing
+	var harData har.HAR
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&harData); err == nil {
+		// Standard parsing succeeded
+		return &harData, nil
+	}
+
+	// If standard parsing failed, try flexible parsing
+	var flexibleHAR FlexibleHAR
+	decoder = json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&flexibleHAR); err != nil {
 		return nil, fmt.Errorf("failed to parse HAR file: %w", err)
 	}
 
-	return &harData, nil
+	// Convert flexible HAR to standard HAR
+	return flexibleHAR.ToStandardHAR(), nil
 }
 
 // URLMethodEntry represents a URL and method combination with associated request IDs
