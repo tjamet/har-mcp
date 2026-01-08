@@ -3,6 +3,7 @@ package har
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/martian/har"
 )
@@ -140,7 +142,7 @@ type RequestDetails struct {
 	StartedDateTime string        `json:"started_datetime"`
 	Time            float64       `json:"time"`
 	Request         *RequestInfo  `json:"request"`
-	Response        *har.Response `json:"response"`
+	Response        *ResponseInfo `json:"response"`
 	Cache           *har.Cache    `json:"cache,omitempty"`
 	Timings         *har.Timings  `json:"timings,omitempty"`
 	ServerIPAddress string        `json:"serverIPAddress,omitempty"`
@@ -159,6 +161,27 @@ type RequestInfo struct {
 	PostData    *har.PostData     `json:"postData,omitempty"`
 	HeadersSize int64             `json:"headersSize"`
 	BodySize    int64             `json:"bodySize"`
+}
+
+// ResponseInfo mirrors har.Response but uses ContentText for body content
+type ResponseInfo struct {
+	Status      int          `json:"status"`
+	StatusText  string       `json:"statusText"`
+	HTTPVersion string       `json:"httpVersion"`
+	Cookies     []har.Cookie `json:"cookies"`
+	Headers     []har.Header `json:"headers"`
+	Content     *ContentText `json:"content"`
+	RedirectURL string       `json:"redirectURL"`
+	HeadersSize int64        `json:"headersSize"`
+	BodySize    int64        `json:"bodySize"`
+}
+
+// ContentText mirrors har.Content but exposes text as a string instead of []byte
+type ContentText struct {
+	Size     int64  `json:"size"`
+	MimeType string `json:"mimeType"`
+	Text     string `json:"text,omitempty"`
+	Encoding string `json:"encoding,omitempty"`
 }
 
 // GetRequestDetails returns the full details of a request by ID with auth headers redacted
@@ -193,7 +216,7 @@ func (p *Parser) GetRequestDetails(harData *har.HAR, requestID string) (*Request
 		StartedDateTime: entry.StartedDateTime.Format(time.RFC3339),
 		Time:            float64(entry.Time),
 		Request:         requestInfo,
-		Response:        entry.Response,
+		Response:        toResponseInfo(entry.Response),
 		Cache:           entry.Cache,
 		Timings:         entry.Timings,
 	}
@@ -225,6 +248,50 @@ func (p *Parser) redactAuthHeaders(headers []har.Header) []har.Header {
 	}
 
 	return redactedHeaders
+}
+
+func toResponseInfo(resp *har.Response) *ResponseInfo {
+	if resp == nil {
+		return nil
+	}
+
+	return &ResponseInfo{
+		Status:      resp.Status,
+		StatusText:  resp.StatusText,
+		HTTPVersion: resp.HTTPVersion,
+		Cookies:     resp.Cookies,
+		Headers:     resp.Headers,
+		Content:     toContentText(resp.Content),
+		RedirectURL: resp.RedirectURL,
+		HeadersSize: resp.HeadersSize,
+		BodySize:    resp.BodySize,
+	}
+}
+
+// Convert har.Content to ContentText, using plain text encoding if possible
+func toContentText(content *har.Content) *ContentText {
+	if content == nil {
+		return nil
+	}
+
+	text := ""
+	encoding := content.Encoding
+
+	if utf8.Valid(content.Text) {
+		// Safe to return as plain text
+		text = string(content.Text)
+	} else {
+		// Base64-encoded to preserve binary data
+		text = base64.StdEncoding.EncodeToString(content.Text)
+		encoding = "base64"
+	}
+
+	return &ContentText{
+		Size:     content.Size,
+		MimeType: content.MimeType,
+		Text:     text,
+		Encoding: encoding,
+	}
 }
 
 // ParseSource parses a HAR file from either a file path or URL
