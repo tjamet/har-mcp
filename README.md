@@ -5,7 +5,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) s
 ## Features
 
 - **Load HAR files** from local filesystem or HTTP URLs
-- **List all URLs and HTTP methods** accessed in the HAR file
+- **List all entries** as one compact row each (method, status, mime type, size, timing, body hash), with substring filtering and pagination
 - **Query request IDs** for specific URL and method combinations
 - **Retrieve full request details** with automatic redaction of authentication headers
 - **Flexible HAR parsing** that handles real-world HAR files with:
@@ -94,20 +94,41 @@ Load a HAR file from a file path or HTTP URL.
 
 **Parameters:**
 - `source` (string, required): File path or HTTP URL to the HAR file
+- `policy` (object, optional): keeps matching response bodies out of the
+  body store at load time. Bodies affected by the policy still appear in
+  `get_request_details` (with previews) but get no `hash` and cannot be
+  fetched via `get_response_body`:
+  - `excludeMimeTypes` (string[], optional): mime type prefixes to exclude,
+    case-insensitive (e.g. `"video/"`, `"image/*"`)
+  - `maxKeepBytes` (number, optional): bodies larger than this many bytes
+    are not stored (absent or `<= 0`: no limit)
 
 **Example:**
 ```json
 {
-  "source": "/path/to/capture.har"
+  "source": "/path/to/capture.har",
+  "policy": {
+    "excludeMimeTypes": ["video/", "image/*"],
+    "maxKeepBytes": 1048576
+  }
 }
 ```
 
-#### 2. `list_urls_methods`
-List all accessed URLs and their HTTP methods from the loaded HAR file.
+#### 2. `list_entries`
+List all HAR entries as one compact row each — method, status, mime type, size,
+timing, and body hash. Query params are kept — they discriminate requests —
+but values for sensitive keys are redacted, and URLs are capped at 100 chars;
+use `get_request_details` for the full URL. This is the primary index: call
+this first, then `get_request_details`, then `get_response_body`.
 
-**Parameters:** None
+**Parameters:**
+- `filter` (string, optional): Case-insensitive substring match on the
+  normalized request URL (query params included, sensitive values redacted)
+- `method` (string, optional): The HTTP method to filter by (GET, POST, etc.)
+- `offset` (number, optional, default 0): Row offset into the matching entries
+- `limit` (number, optional, default 200, max 1000): Maximum number of rows to return
 
-**Returns:** Array of URL/method combinations with their associated request IDs.
+**Returns:** `{entries, total, offset, limit, truncated}` — one flat row per entry.
 
 #### 3. `get_request_ids`
 Get all request IDs for a specific URL and HTTP method.
@@ -117,6 +138,7 @@ Get all request IDs for a specific URL and HTTP method.
 - `method` (string, required): The HTTP method to filter by (GET, POST, etc.)
 
 **Example:**
+
 ```json
 {
   "url": "https://api.example.com/users",
@@ -131,6 +153,7 @@ Get full request details by request ID. Authentication headers will be automatic
 - `request_id` (string, required): The request ID to retrieve details for
 
 **Example:**
+
 ```json
 {
   "request_id": "request_0"
@@ -144,6 +167,38 @@ Get full request details by request ID. Authentication headers will be automatic
 - Cookie
 - Set-Cookie
 - Proxy-Authorization
+
+#### 5. `get_response_body`
+Fetch a chunk of a stored response body by content hash. The hash is returned as
+`response.content.hash` by `get_request_details`. Text bodies return the decoded bytes
+between `offset` and `offset + limit`; binary bodies return metadata only.
+
+**Parameters:**
+- `hash` (string, required): Content hash reference of the body to fetch
+- `offset` (number, optional, default 0): Byte offset into the decoded body
+- `limit` (number, optional, default 4096): Maximum number of bytes to return (max 65536)
+
+**Example:**
+
+```json
+{
+  "hash": "body:3f2a1c9d8e7b6a5f4c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+  "offset": 0,
+  "limit": 4096
+}
+```
+
+## Client-side usage
+
+- **Never attach a .har file raw to an agent context** (e.g. `@ capture.har`):
+  a 5.7MB capture is roughly 1.4M tokens. The MCP tools are the only
+  supported ingestion path: `load_har` -> `list_entries` ->
+  `get_request_details` -> `get_response_body`.
+- No MCP server available? Pre-trim the file with jq — strip all response
+  bodies and postData text while keeping headers/status:
+  `jq 'del(.log.entries[].response.content.text, .log.entries[].request.postData.text)' capture.har > trimmed.har`
+- Or keep small bodies and only drop responses over 16KB:
+  `jq '(.log.entries[] | select(.response.content.size > 16384) | .response.content.text) = null' capture.har > trimmed.har`
 
 ## Integration with Claude Desktop
 
@@ -176,7 +231,9 @@ go test ./...
 │       └── main.go
 ├── pkg/
 │   └── har/           # HAR parsing library
+│       ├── body_store.go
 │       ├── parser.go
+│       ├── custom_types.go
 │       └── parser_test.go
 ├── go.mod
 ├── go.sum
