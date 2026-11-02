@@ -14,7 +14,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOARCH=$(echo ${TARGETPLATFORM:-linux/amd64} | cut -d/ -f2) go build -o har-mcp cmd/har-mcp/main.go
 
-FROM ${BASE_REGISTRY}/alpine:3.19.0
+FROM ${BASE_REGISTRY}/alpine:3.24.3
 
 COPY --from=builder /app/har-mcp /usr/local/bin/har-mcp
 
