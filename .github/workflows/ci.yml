@@ -1,0 +1,21 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # The version comes from go.mod, and check-latest is deliberately
+          # absent. This runner shares /opt/hostedtoolcache between concurrent
+          # jobs, and check-latest made every job re-resolve and re-extract the
+          # toolchain into the same path, so a job could read a half-unpacked
+          # tree and fail with `cannot find package "unsafe"`.
+          go-version-file: go.mod
+      - run: make check
