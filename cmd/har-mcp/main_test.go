@@ -325,12 +325,12 @@ func startSession(t *testing.T) *session {
 	done := make(chan error, 1)
 	go func() {
 		done <- server.NewStdioServer(newMCPServer(NewHARServer())).Listen(ctx, inR, outW)
-		outW.Close()
+		_ = outW.Close()
 	}()
 	closePipes := func() {
 		cancel()
-		inW.Close()
-		outR.Close()
+		_ = inW.Close()
+		_ = outR.Close()
 	}
 	t.Cleanup(func() {
 		closePipes()
