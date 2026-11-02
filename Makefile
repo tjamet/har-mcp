@@ -3,7 +3,7 @@
 # Pinned so a new golangci-lint release cannot turn CI red by itself; bump it
 # deliberately. Run through the Go module proxy, which the runners already use,
 # so no binary is downloaded from GitHub releases.
-GOLANGCI_LINT_VERSION := v2.14.0
+GOLANGCI_LINT_VERSION := v2.15.0
 
 vet:
 	go vet ./...

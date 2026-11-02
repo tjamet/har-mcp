@@ -335,7 +335,8 @@ func startSession(t *testing.T) *session {
 	t.Cleanup(func() {
 		closePipes()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err // Listen returns ctx.Err() or a closed-pipe error on teardown
 		case <-time.After(5 * time.Second):
 			t.Error("stdio server did not stop")
 		}
