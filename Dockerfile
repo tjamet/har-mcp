@@ -1,6 +1,6 @@
 ARG BASE_REGISTRY=docker.io/library
 
-FROM --platform=$BUILDPLATFORM ${BASE_REGISTRY}/golang:1.26.10-alpine AS builder
+FROM --platform=$BUILDPLATFORM ${BASE_REGISTRY}/golang:1.27.3-alpine AS builder
 
 ARG TARGETPLATFORM
 
