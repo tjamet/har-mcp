@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -172,7 +173,9 @@ func TestGetRequestIDs(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.False(t, res.IsError)
-		assert.Equal(t, "null", resultText(t, res))
+		var ids []string
+		require.NoError(t, json.Unmarshal([]byte(resultText(t, res)), &ids))
+		assert.Empty(t, ids)
 	})
 
 	t.Run("malformed arguments", func(t *testing.T) {
@@ -217,6 +220,73 @@ func TestGetRequestDetails(t *testing.T) {
 		assert.Equal(t, "application/json", headers["Accept"])
 	})
 
+	t.Run("redacts every credential-bearing header, whatever its case", func(t *testing.T) {
+		secrets := map[string]string{
+			"Authorization":       "Bearer s3cret-authorization",
+			"X-API-Key":           "s3cret-api-key",
+			"x-auth-token":        "s3cret-auth-token",
+			"COOKIE":              "session=s3cret-cookie",
+			"Set-Cookie":          "session=s3cret-set-cookie",
+			"Proxy-Authorization": "Basic s3cret-proxy",
+		}
+		headers := []map[string]string{{"name": "Accept", "value": "application/json"}}
+		for name, value := range secrets {
+			headers = append(headers, map[string]string{"name": name, "value": value})
+		}
+		doc, err := json.Marshal(map[string]any{"log": map[string]any{
+			"version": "1.2",
+			"creator": map[string]string{"name": "test", "version": "0"},
+			"entries": []map[string]any{{
+				"startedDateTime": "2024-01-15T10:30:00.000Z",
+				"time":            1,
+				"request": map[string]any{
+					"method": "GET", "url": "https://api.example.com/x", "httpVersion": "HTTP/1.1",
+					"cookies": []any{}, "headers": headers, "queryString": []any{},
+					"headersSize": -1, "bodySize": 0,
+				},
+				"response": map[string]any{
+					"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.1",
+					"cookies": []any{}, "headers": []any{},
+					"content":     map[string]any{"size": 0, "mimeType": "text/plain"},
+					"redirectURL": "", "headersSize": -1, "bodySize": 0,
+				},
+				"cache":   map[string]any{},
+				"timings": map[string]any{"send": 0, "wait": 1, "receive": 0},
+			}},
+		}})
+		require.NoError(t, err)
+		path := filepath.Join(t.TempDir(), "secrets.har")
+		require.NoError(t, os.WriteFile(path, doc, 0o600))
+		hs := NewHARServer()
+		require.NoError(t, hs.loadHAR(path))
+
+		res, err := hs.handleGetRequestDetails(context.Background(), callRequest(map[string]any{"request_id": "request_0"}))
+
+		require.NoError(t, err)
+		assert.False(t, res.IsError)
+		text := resultText(t, res)
+		for name, value := range secrets {
+			assert.NotContains(t, text, value, name)
+		}
+		var details struct {
+			Request struct {
+				Headers []struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				} `json:"headers"`
+			} `json:"request"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(text), &details))
+		got := map[string]string{}
+		for _, hd := range details.Request.Headers {
+			got[hd.Name] = hd.Value
+		}
+		for name := range secrets {
+			assert.Equal(t, "[REDACTED]", got[name], name)
+		}
+		assert.Equal(t, "application/json", got["Accept"])
+	})
+
 	t.Run("unknown request id", func(t *testing.T) {
 		res, err := h.handleGetRequestDetails(context.Background(), callRequest(map[string]any{"request_id": "request_99"}))
 
@@ -234,11 +304,16 @@ func TestGetRequestDetails(t *testing.T) {
 	})
 }
 
+// responseTimeout bounds each wait for the server so a silent server fails the
+// test quickly instead of hanging to the global timeout.
+const responseTimeout = 10 * time.Second
+
 // session drives the real mcp-go stdio server, as main does, over in-memory pipes.
 type session struct {
 	t      *testing.T
 	in     io.Writer
 	out    *bufio.Scanner
+	close  func()
 	nextID int
 }
 
@@ -252,17 +327,20 @@ func startSession(t *testing.T) *session {
 		done <- server.NewStdioServer(newMCPServer(NewHARServer())).Listen(ctx, inR, outW)
 		outW.Close()
 	}()
-	t.Cleanup(func() {
+	closePipes := func() {
 		cancel()
 		inW.Close()
 		outR.Close()
+	}
+	t.Cleanup(func() {
+		closePipes()
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
 			t.Error("stdio server did not stop")
 		}
 	})
-	return &session{t: t, in: inW, out: bufio.NewScanner(outR)}
+	return &session{t: t, in: inW, out: bufio.NewScanner(outR), close: closePipes}
 }
 
 func (s *session) send(v any) {
@@ -278,7 +356,15 @@ func (s *session) call(method string, params any) json.RawMessage {
 	s.t.Helper()
 	s.nextID++
 	s.send(map[string]any{"jsonrpc": "2.0", "id": s.nextID, "method": method, "params": params})
-	require.True(s.t, s.out.Scan(), "no response to %s: %v", method, s.out.Err())
+	scanned := make(chan bool, 1)
+	go func() { scanned <- s.out.Scan() }()
+	select {
+	case ok := <-scanned:
+		require.True(s.t, ok, "no response to %s: %v", method, s.out.Err())
+	case <-time.After(responseTimeout):
+		s.close() // unblocks the pending Scan and the server
+		s.t.Fatalf("no response to %s within %s", method, responseTimeout)
+	}
 	var resp struct {
 		ID     int             `json:"id"`
 		Result json.RawMessage `json:"result"`
