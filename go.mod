@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/google/martian v2.1.0+incompatible
-	github.com/mark3labs/mcp-go v1.3.0
+	github.com/mark3labs/mcp-go v1.5.0
 	github.com/stretchr/testify v1.11.1
 )
 
