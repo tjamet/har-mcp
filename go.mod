@@ -1,6 +1,6 @@
 module github.com/tjamet/har-mcp
 
-go 1.25.14
+go 1.26.10
 
 require (
 	github.com/google/martian v2.1.0+incompatible
