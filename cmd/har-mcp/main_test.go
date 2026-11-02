@@ -418,7 +418,7 @@ func TestEndToEndOverStdio(t *testing.T) {
 	}
 	assert.Equal(t, map[string][]string{
 		"load_har":            {"source"},
-		"list_urls_methods":   nil,
+		"list_urls_methods":   {}, // mcp-go v1 always serialises "required": []
 		"get_request_ids":     {"url", "method"},
 		"get_request_details": {"request_id"},
 	}, required)
