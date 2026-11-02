@@ -188,18 +188,18 @@ func (h *HARServer) handleGetRequestDetails(ctx context.Context, request mcp.Cal
 	return mcp.NewToolResultText(string(data)), nil
 }
 
-func main() {
-	// Create the HAR server
-	harServer := NewHARServer()
-
-	// Create MCP server
+// newMCPServer wires the HAR tools into an MCP server.
+func newMCPServer(harServer *HARServer) *server.MCPServer {
 	mcpServer := server.NewMCPServer(
 		"har-mcp",
 		"1.0.0",
 	)
-
-	// Add tools
 	mcpServer.AddTools(harServer.createTools()...)
+	return mcpServer
+}
+
+func main() {
+	mcpServer := newMCPServer(NewHARServer())
 
 	// Create and start stdio server
 	stdioServer := server.NewStdioServer(mcpServer)
